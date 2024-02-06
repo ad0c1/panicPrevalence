@@ -1,0 +1,1237 @@
+---
+title: "R Notebook for panic script"
+output: html_notebook
+---
+
+This version is for the final check before submitting to Journal lancet psychiatry
+
+```{r}
+library('lmtest');
+library(astsa)
+library(forecast)
+library(dplyr)
+library(zoo)
+library(TSstudio)
+```
+
+In the below, DTPANIC is the master data sheet, from which all variables are derived. 
+OCD and PTSD are same. Please see denominator is the monthly number of total population.
+
+```{r}
+require(readxl)
+setwd("~/Dropbox/gitLab/studyDepressionBigData")
+DTPANIC<- read_xlsx("PanicWholePopu.xlsx",sheet = "PANIC")
+mTotPopulation=DTPANIC$totN1;
+nPrevPANIC4=DTPANIC$prevN4/mTotPopulation*100;
+nNPrevPANIC4=DTPANIC$inciN4/mTotPopulation*100;
+nPrevPANIC3=DTPANIC$prevN3/mTotPopulation*100;
+nNPrevPANIC3=DTPANIC$inciN3/mTotPopulation*100;
+nPrevPANIC2=DTPANIC$prevN2/mTotPopulation*100;
+nNPrevPANIC2=DTPANIC$inciN2/mTotPopulation*100;
+nPrevPANIC1=DTPANIC$prevN1/mTotPopulation*100;
+nNPrevPANIC1=DTPANIC$inciN1/mTotPopulation*100;
+DTOCD<- read_xlsx("PanicWholePopu.xlsx",sheet = "OCD")
+nPrevOCD4=DTOCD$prevN4/mTotPopulation*100;
+nNPrevOCD4=DTOCD$inciN4/mTotPopulation*100;
+nPrevOCD3=DTOCD$prevN3/mTotPopulation*100;
+nNPrevOCD3=DTOCD$inciN3/mTotPopulation*100;
+nPrevOCD2=DTOCD$prevN2/mTotPopulation*100;
+nNPrevOCD2=DTOCD$inciN2/mTotPopulation*100;
+nPrevOCD1=DTOCD$prevN1/mTotPopulation*100;
+nNPrevOCD1=DTOCD$inciN1/mTotPopulation*100;
+DTPTSD<- read_xlsx("PanicWholePopu.xlsx",sheet = "PTSD")
+nPrevPTSD4=DTPTSD$prevN4/mTotPopulation*100;
+nNPrevPTSD4=DTPTSD$inciN4/mTotPopulation*100;
+nPrevPTSD3=DTPTSD$prevN3/mTotPopulation*100;
+nNPrevPTSD3=DTPTSD$inciN3/mTotPopulation*100;
+nPrevPTSD2=DTPTSD$prevN2/mTotPopulation*100;
+nNPrevPTSD2=DTPTSD$inciN2/mTotPopulation*100;
+nPrevPTSD1=DTPTSD$prevN1/mTotPopulation*100;
+nNPrevPTSD1=DTPTSD$inciN1/mTotPopulation*100;
+```
+
+From the file name of the raw data, except search for diagnosis names, celebrities names seemed to be searched, combined with the names of diagnosis.
+
+# READ GOOGLE TREND and CELEB DISCLOSURE
+```{r}
+sPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/panicDisorder20142021.csv", header=FALSE);
+sOCDDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/OCDDisorder20142029.csv", header=FALSE);
+sPanicOCDDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/PanicOCDDisorder20142029.csv", header=FALSE);
+sChaPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googChaPanicDis.csv", header=FALSE);
+sLeePanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googLeePanicDis.csv", header=FALSE);
+sKimPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googKimPanicDis.csv", header=FALSE);
+
+```
+
+The number at the end of the file name represents the degree of inclusion criteria. The number four corresponds to the most inclusive criteria.
+.ts represents the date is converted to time series.
+
+# MAKE DATAFRAME FOR ALL GATHERED INFORMATION
+```{r}
+data <- data.frame(
+month = as.ts(sPanicDis$V1, format="%Y-%m"),
+prevPANIC4 = nPrevPANIC4, 
+prevPTSD4 = nPrevPTSD4, 
+prevOCD4 = nPrevOCD4,
+prevPANIC3 = nPrevPANIC3, 
+prevPTSD3 = nPrevPTSD3, 
+prevOCD3 = nPrevOCD3,
+prevPANIC2 = nPrevPANIC2, 
+prevPTSD2 = nPrevPTSD2, 
+prevOCD2 = nPrevOCD2,
+prevPANIC1 = nPrevPANIC1, 
+prevPTSD1 = nPrevPTSD1, 
+prevOCD1 = nPrevOCD1,
+
+inciPANIC4 = nNPrevPANIC4, 
+inciPTSD4 = nNPrevPTSD4, 
+inciOCD4 = nNPrevOCD4,
+inciPANIC3 = nNPrevPANIC3, 
+inciPTSD3 = nNPrevPTSD3, 
+inciOCD3 = nNPrevOCD3,
+inciPANIC2 = nNPrevPANIC2, 
+inciPTSD2 = nNPrevPTSD2, 
+inciOCD2 = nNPrevOCD2,
+inciPANIC1 = nNPrevPANIC1, 
+inciPTSD1 = nNPrevPTSD1, 
+inciOCD1 = nNPrevOCD1,
+
+google = sPanicDis$V2,
+googleOCD = sOCDDis$V2,
+googleOCDrelative = sPanicOCDDis$V3,
+googCha = c(sChaPanicDis$V2,rep(0,96)),
+googLee = c(sLeePanicDis$V2,rep(0,96)),
+googKim = c(sKimPanicDis$V2,rep(0,96))
+)
+
+google.ts=ts(data$google,frequency=12, start=c(2004,1))
+googleOCD.ts=ts(data$googleOCD,frequency=12, start=c(2004,1))
+googleOCDrelative.ts=ts(data$googleOCDrelative,frequency=12, start=c(2004,1))
+prevPANIC4.ts=ts(data$prevPANIC4,frequency=12, start=c(2004,1))
+prevPTSD4.ts=ts(data$prevPTSD4, frequency = 12, start = c(2004,1))
+prevOCD4.ts=ts(data$prevOCD4, frequency = 12, start = c(2004,1))
+prevPANIC3.ts=ts(data$prevPANIC3,frequency=12, start=c(2004,1))
+prevPTSD3.ts=ts(data$prevPTSD3, frequency = 12, start = c(2004,1))
+prevOCD3.ts=ts(data$prevOCD3, frequency = 12, start = c(2004,1))
+prevPANIC2.ts=ts(data$prevPANIC2,frequency=12, start=c(2004,1))
+prevPTSD2.ts=ts(data$prevPTSD2, frequency = 12, start = c(2004,1))
+prevOCD2.ts=ts(data$prevOCD2, frequency = 12, start = c(2004,1))
+prevPANIC1.ts=ts(data$prevPANIC1,frequency=12, start=c(2004,1))
+prevPTSD1.ts=ts(data$prevPTSD1, frequency = 12, start = c(2004,1))
+prevOCD1.ts=ts(data$prevOCD1, frequency = 12, start = c(2004,1))
+
+inciPANIC4.ts=ts(data$inciPANIC4,frequency=12, start=c(2004,1) )
+inciPTSD4.ts=ts(data$inciPTSD4,frequency=12, start=c(2004,1) )
+inciOCD4.ts=ts(data$inciOCD4,frequency=12, start=c(2004,1) )
+inciPANIC3.ts=ts(data$inciPANIC3,frequency=12, start=c(2004,1) )
+inciPTSD3.ts=ts(data$inciPTSD3,frequency=12, start=c(2004,1) )
+inciOCD3.ts=ts(data$inciOCD3,frequency=12, start=c(2004,1) )
+inciPANIC2.ts=ts(data$inciPANIC2,frequency=12, start=c(2004,1) )
+inciPTSD2.ts=ts(data$inciPTSD2,frequency=12, start=c(2004,1) )
+inciOCD2.ts=ts(data$inciOCD2,frequency=12, start=c(2004,1) )
+inciPANIC1.ts=ts(data$inciPANIC1,frequency=12, start=c(2004,1) )
+inciPTSD1.ts=ts(data$inciPTSD1,frequency=12, start=c(2004,1) )
+inciOCD1.ts=ts(data$inciOCD1,frequency=12, start=c(2004,1) )
+
+```
+
+Below is the just the visualization of the data.
+
+# Draw graph of prevalence 
+```{r}
+prevNEURO4_3.ts=ts.union(prevPANIC4.ts, prevPTSD4.ts, prevOCD4.ts);
+inciNEURO4_3.ts=ts.union(inciPANIC4.ts, inciPTSD4.ts, inciOCD4.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevNEURO4_3.jpeg")
+plot(prevNEURO4_3.ts, type="l", plot.type="s", col=c("blue","magenta","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevNEURO4_3.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD", "PTSD"),
+       col=c("blue", "cyan","magenta"), lty=1, cex=0.8)
+lines(google.ts/100*max(inciNEURO4_3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+Doing changing the inclusion criteria. 
+
+```{r}
+prevNEURO3_3.ts=ts.union(prevPANIC3.ts, prevPTSD3.ts, prevOCD3.ts);
+inciNEURO3_3.ts=ts.union(inciPANIC3.ts, inciPTSD3.ts, inciOCD3.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevNEURO3_3.jpeg")
+plot(prevNEURO3_3.ts, type="l", plot.type="s", col=c("blue","magenta","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevNEURO3_3.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD", "PTSD"),
+       col=c("blue", "cyan","magenta"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+```{r}
+prevNEURO2_3.ts=ts.union(prevPANIC2.ts, prevPTSD2.ts, prevOCD2.ts);
+inciNEURO2_3.ts=ts.union(inciPANIC2.ts, inciPTSD2.ts, inciOCD2.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevNEURO2_3.jpeg")
+plot(prevNEURO2_3.ts, type="l", plot.type="s", col=c("blue","magenta","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevNEURO2_3.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD", "PTSD"),
+       col=c("blue", "cyan","magenta"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+
+```{r}
+prevNEURO1_3.ts=ts.union(prevPANIC1.ts, prevPTSD1.ts, prevOCD1.ts);
+inciNEURO1_3.ts=ts.union(inciPANIC1.ts, inciPTSD1.ts, inciOCD1.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevNEURO1_3.jpeg")
+plot(prevNEURO1_3.ts, type="l", plot.type="s", col=c("blue","magenta","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevNEURO1_3.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD", "PTSD"),
+       col=c("blue", "cyan","magenta"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+
+# PREVALENCE ALL
+
+```{r}
+prevPANIC1234_OCD4.ts=ts.union(prevPANIC4.ts, prevPANIC3.ts, prevPANIC2.ts, prevPANIC1.ts,prevOCD4.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevPANIC1234_OCD4.jpeg")
+plot(prevPANIC1234_OCD4.ts, type="l", plot.type="s", col=c("blue4", "blue3","blue2","blue","magenta"), xlab="Month", ylab="Pat. %", linetype=c("solid","dashed"), ylim=c(0,max(prevNEURO4_3.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC4","PANIC3", "PANIC2", "PANIC1","OCD4"),
+       col=c("blue4", "blue3","blue2","blue","magenta"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+# INCIDENCE ALL
+
+```{r}
+inciPANIC1234_OCD1234.ts=ts.union(inciPANIC4.ts, inciPANIC3.ts, inciPANIC2.ts, inciPANIC1.ts,inciOCD4.ts,inciOCD3.ts,inciOCD2.ts,inciOCD1.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/inciPANIC1234_OCD1234.jpeg")
+plot(inciPANIC1234_OCD1234.ts, type="l", plot.type="s", col=c("blue4", "blue3","blue2","blue","darkorchid4","darkorchid3","darkorchid2","darkorchid1"), xlab="Month", ylab="New Pat. %", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC1234_OCD1234.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC4","PANIC3", "PANIC2", "PANIC1","OCD4","OCD3","OCD2","OCD1"),
+       col=c("blue4", "blue3","blue2","blue","darkorchid4","darkorchid3","darkorchid2","darkorchid1"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+# PREVALENCE ALL PANIC OCD
+```{r}
+prevPANIC1234_OCD1234.ts=ts.union(prevPANIC4.ts, prevPANIC3.ts, prevPANIC2.ts, prevPANIC1.ts,prevOCD4.ts,prevOCD3.ts,prevOCD2.ts,prevOCD1.ts);
+#jpeg(file="~/Dropbox/gitLab/studyDepressionBigData/prevPANIC1234_OCD1234.jpeg")
+plot(prevPANIC1234_OCD1234.ts, type="l", plot.type="s", col=c("blue4", "blue3","blue2","blue","darkorchid4","darkorchid3","darkorchid2","darkorchid1"), xlab="Month", ylab="New Pat. %", linetype=c("solid","dashed"), ylim=c(0,max(prevPANIC1234_OCD1234.ts[,1])))
+legend("topleft", inset = 0.02, legend=c("PANIC4","PANIC3", "PANIC2", "PANIC1","OCD4","OCD3","OCD2","OCD1"),
+       col=c("blue4", "blue3","blue2","blue","darkorchid4","darkorchid3","darkorchid2","darkorchid1"), lty=1, cex=0.8)
+#lines(google.ts/100*max(prevNEURO3.ts[,1]),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+
+
+# Draw graph of incidence and google data
+```{r}
+inciNEURO3.ts=ts.union(inciPANIC.ts, inciPTSD.ts, inciOCD.ts);
+#pdf(file="~/Dropbox/gitLab/studyDepressionBigData/inciNEURO320042021.pdf")
+plot(inciNEURO3.ts, type="l", plot.type="s", col=c("blue","magenta","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC.ts)))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD", "PTSD"),
+       col=c("blue", "cyan","magenta"), lty=1, cex=0.8)
+polygon(c(min(index(google.ts)),index(google.ts), max(index(google.ts))), c(0, google.ts*max(inciPANIC.ts)/100,0),col="blue")
+polygon(c(min(index(googleOCDrelative.ts)),index(googleOCDrelative.ts), max(index(googleOCDrelative.ts))), c(0, googleOCDrelative.ts*max(inciPANIC.ts)/100,0),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+#dev.off()
+```
+```{r}
+# check autocorrelation
+acf2(inciPANIC4.ts, max.lag=24)
+# View ACF/PACF plots of differenced/seasonally differenced data
+acf2(diff(inciPANIC4.ts,lag=12), max.lag=24)
+acf2(diff(diff(inciPANIC4.ts,lag=12)), max.lag=24)
+```
+
+transferF.ts is the time series of transfer function from the celebrities' disclosures.
+
+# make transfer fuction matrix
+```{r}
+countN=1:216;
+monthCha=which(data$googCha == 100);
+monthKim=which(data$googKim == 100);
+monthLee=which(data$googLee == 100);
+
+stepCha = as.numeric(countN > monthCha)
+stepKim = as.numeric(countN > monthKim)
+stepLee = as.numeric(countN > monthLee)
+rampCha <- append(rep(0,monthCha), seq(1,216-monthCha,1))
+rampKim <- append(rep(0,monthKim), seq(1,216-monthKim,1))
+rampLee <- append(rep(0,monthLee), seq(1,216-monthLee,1))
+transferF=cbind(stepCha,stepKim,stepLee,rampCha,rampKim,rampLee)
+transferF.ts=ts(transferF,frequency=12, start=c(2004,1))
+transferFGoogle=as.numeric(google.ts)
+transferFGoogle.ts=ts(transferF,frequency=12, start=c(2004,1))
+
+plot(transferF.ts)
+```
+
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+incimodel1 <- auto.arima(inciPANIC1.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(incimodel1)
+Box.test(incimodel1$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(incimodel1)
+confint(incimodel1)
+coeftest(incimodel1)
+```
+
+
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+incimodel2 <- auto.arima(inciPANIC2.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(incimodel2)
+Box.test(incimodel2$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(incimodel2)
+confint(incimodel2)
+coeftest(incimodel2)
+```
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+incimodel3 <- auto.arima(inciPANIC3.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(incimodel3)
+Box.test(incimodel3$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(incimodel3)
+confint(incimodel3)
+coeftest(incimodel3)
+```
+
+Below is the selected model of incidence. In the text:Only the first celebrity disclosure significantly increased both the level (0·0058%, 95% CI: 0·0022%–0·0095%, p < 0·005) and slope of the monthly incidence of panic disorder (0·00078% per month, 95% CI 0·00019%–0·0014% per month, p < 0·01). 
+
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+incimodel4 <- auto.arima(inciPANIC4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(incimodel4)
+Box.test(incimodel4$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(incimodel4)
+confint(incimodel4)
+coeftest(incimodel4)
+```
+
+
+# OCD model
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+modelOCD4 <- auto.arima(inciOCD4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(modelOCD4)
+Box.test(modelOCD4$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(modelOCD4)
+confint(modelOCD4)
+coeftest(modelOCD4)
+```
+
+
+Significance was found in two cases:grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2) and grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=3).
+A significant p-value in the context of the ADF test suggests that the time series is likely stationary.
+A significant p-value was found in google.ts and diff(prevPANIC4.ts) diff(inciPANIC4.ts).
+In the manuscript: The monthly incidence and prevalence were nonstationary (ADF = -2·98, p = 0·17 and ADF = -0·73, p = 0·97 for incidence and prevalence, respectively); the first-order differences in the monthly incidence and prevalence of panic disorder were stationary (ADF = -8·19, p < 0·05 and ADF = -7·14, p < 0·05 for incidence and prevalence, respectively). 
+
+
+# correlation between Google trend and incidence
+```{r}
+library(tseries)
+adf.test(google.ts, alternative = "stationary") 
+adf.test(inciPANIC4.ts, alternative = "stationary") 
+adf.test(prevPANIC4.ts, alternative = "stationary") 
+
+#adf.test(inciPANIC3.ts, alternative = "stationary") 
+#adf.test(prevPANIC3.ts, alternative = "stationary") 
+
+#adf.test(inciPANIC2.ts, alternative = "stationary") 
+#adf.test(prevPANIC2.ts, alternative = "stationary") 
+
+#adf.test(inciPANIC1.ts, alternative = "stationary") 
+#adf.test(prevPANIC1.ts, alternative = "stationary") 
+
+adf.test(diff(inciPANIC4.ts), alternative = "stationary") 
+adf.test(diff(prevPANIC4.ts), alternative = "stationary")
+
+#adf.test(diff(inciPANIC3.ts), alternative = "stationary") 
+#adf.test(diff(prevPANIC3.ts), alternative = "stationary")
+
+#adf.test(diff(inciPANIC2.ts), alternative = "stationary") 
+#adf.test(diff(prevPANIC2.ts), alternative = "stationary")
+
+#adf.test(diff(inciPANIC1.ts), alternative = "stationary") 
+#adf.test(diff(prevPANIC1.ts), alternative = "stationary")
+
+
+#cor.test(inciPANIC1.ts, google.ts,  method="kendall")
+cor.test(diff(inciPANIC4.ts), google.ts[-216],  method="spearman", exact=FALSE)
+cor.test(diff(prevPANIC4.ts), google.ts[-216],  method="spearman", exact=FALSE)
+
+#cor.test(diff(inciPANIC3.ts), google.ts[-216],  method="spearman", exact=FALSE)
+#cor.test(diff(prevPANIC3.ts), google.ts[-216],  method="spearman", exact=FALSE)
+
+#cor.test(diff(inciPANIC2.ts), google.ts[-216],  method="spearman", exact=FALSE)
+#cor.test(diff(prevPANIC2.ts), google.ts[-216],  method="spearman", exact=FALSE)
+
+#cor.test(diff(inciPANIC1.ts), google.ts[-216],  method="spearman", exact=FALSE)
+#cor.test(diff(prevPANIC1.ts), google.ts[-216],  method="spearman", exact=FALSE)
+
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=4)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=4)
+
+#grangertest(inciPANIC1.ts ~ google.ts, order=3)
+#grangertest(inciPANIC1.ts ~ google.ts, order=2)
+#grangertest(inciPANIC1.ts ~ google.ts, order=1)
+
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=3)
+#grangertest(diff(prevPANIC1.ts) ~ google.ts[-216], order=3)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2)
+#grangertest(diff(prevPANIC1.ts) ~ google.ts[-216], order=2)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=1)
+#grangertest(diff(prevPANIC1.ts) ~ google.ts[-216], order=1)
+
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=3)
+
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=2)
+
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=1)
+
+grangertest(diff(inciPANIC4.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(inciPANIC4.ts), order=1)
+
+grangertest(diff(inciPANIC4.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(inciPANIC4.ts), order=2)
+
+```
+
+
+
+# influence of celebrities disclosures on Google search for panic disorder
+```{r}
+# model 1 is for statistical analysis result is (3 0 0) , (2,0,0) 
+modelG <- auto.arima(google.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(modelG)
+Box.test(modelG$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(modelG)
+confint(modelG)
+coeftest(modelG)
+```
+model0inci4 represents best fit model with its parameter using only pre-disclosure period. Best model: ARIMA(1,1,0)(1,0,0)[12]   
+fmodel0inci4 means modeled time series using model0
+fc0inci4 and fc0inci4.ts is the forecasted series using the fmodel0inci4
+inciPANIC4.ts.2 .2 indicates combined time series with forecast
+
+# Prediction model 1 : only using pre-disclosure period 
+```{r}
+# model 0 is for prediction 
+model0inci4 <- auto.arima(window(inciPANIC4.ts, end=c(2010,12)), seasonal=TRUE, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+fmodel0inci4 <- Arima(window(inciPANIC4.ts, end=c(2010,12)), order=c(1,1,0), seasonal=list(order=c(1,0,0), period=12))
+fc0inci4 <- forecast(fmodel0inci4, h=(216-monthCha))
+fc0inci4.ts <- ts(as.numeric(fc0inci4$mean), start=c(2011,1), frequency=12)
+inciPANIC4.ts.2 <- ts.union(inciPANIC4.ts, fc0inci4.ts)
+
+# for prevalence
+# model 0 is for prediction 
+model0prev4 <- auto.arima(window(prevPANIC4.ts, end=c(2010,12)), seasonal=TRUE, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# ARIMA(0,1,4)(1,0,0)[12] with drift 
+fmodel0prev4 <- Arima(window(prevPANIC4.ts, end=c(2010,12)), order=c(0,1,4), seasonal=list(order=c(1,0,0), period=12))
+fc0prev4 <- forecast(fmodel0prev4, h=(216-monthCha))
+fc0prev4.ts <- ts(as.numeric(fc0prev4$mean), start=c(2011,1), frequency=12)
+prevPANIC4.ts.2 <- ts.union(prevPANIC4.ts, fc0prev4.ts)
+
+```
+
+Due to the rounding of numbers, 0.6054839 was calculated 0.61 so 572.3712 % increase was presented as 577.78 % as following:
+The observed annual incidence of 0·61% in 2021 was an 577.77% higher than the predicted incidence of 0·09% (95% CI: -0·11%–0·29%). 
+
+Below one too:The observed annual prevalence of 7·53% in 2021 was a 775·58% higher than the forecasted incidence of 0·86% (95% CI:0·33%–1·40%). 
+
+```{r}
+# forecast annual incidence in 2021 with 95% CI, supposing denominator-the number of total population does not vary across months
+# CI lower upper is the second colums of fc0inci4$lower[,2] and 
+# forcast 2021 annual incidence
+sum(tail(fc0inci4$mean,12))
+# its CI 95%
+sum(tail(fc0inci4$lower[,2],12))
+sum(tail(fc0inci4$upper[,2],12))
+# Percent increase of observed value from 
+(sum(tail(inciPANIC4.ts,12)) - sum(tail(fc0inci4$mean,12)))/sum(tail(fc0inci4$mean,12)) * 100 
+
+
+# forcast 2021 annual prevalence
+sum(tail(fc0prev4$mean,12))
+# its CI 95%
+sum(tail(fc0prev4$lower[,2],12))
+sum(tail(fc0prev4$upper[,2],12))
+# Percent increase of observed value from 
+(sum(tail(prevPANIC4.ts,12)) - sum(tail(fc0prev4$mean,12)))/sum(tail(fc0prev4$mean,12)) * 100
+# instead used one (7.53-0.86)*100/0.86 =775.58 %
+```
+
+Below is the raw material of Figure2.2.ai
+
+```{r}
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/inciPanicPrediction20042021_2.pdf")
+plot(inciPANIC4.ts.2, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC4.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(fc0inci4$lower[,2],rev(fc0inci4$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+dev.off()
+
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/prevPanicPrediction20042021_2.pdf")
+plot(prevPANIC4.ts.2, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevPANIC4.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(fc0prev4$lower[,2],rev(fc0prev4$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+dev.off()
+
+
+
+```
+
+
+Below is applying the same procedure using inciPANIC1.ts, Best model: ARIMA(0,1,1)(2,1,0)[12]    
+
+```{r}
+# model 1 is for prediction with primary only
+model0inci1 <- auto.arima(window(inciPANIC1.ts, end=c(2010,12)), seasonal=TRUE, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+fmodel0inci1 <- Arima(window(inciPANIC1.ts, end=c(2010,12)), order=c(0,1,1), seasonal=list(order=c(2,1,0), period=12))
+incifc1 <- forecast(fmodel0inci1, h=(216-monthCha))
+incifc1.ts <- ts(as.numeric(incifc1$mean), start=c(2011,1), frequency=12)
+inciPANIC1.ts.2 <- ts.union(inciPANIC1.ts, incifc1.ts)
+```
+
+
+```{r}
+#pdf(file="~/Dropbox/gitLab/studyDepressionBigData/inciPanicPrediction1.pdf")
+plot(inciPANIC1.ts.2, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC4.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(incifc1$lower[,2],rev(incifc1$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+lines(fitted(fmodel0inci1),col="red",lwd=1, lty="dotted")
+#dev.off()
+```
+
+if we use the ARIMA MODEL of whole time series, best model was (1 0 0) (0 0 1), 
+however, prediction should be done using only data by pre-disclosure period.  
+
+```{r}
+# model 4 is for prediction with whole time series
+incifmodel4 <- Arima(window(inciPANIC4.ts, end=c(2010,12)), order=c(1,0,0), seasonal=list(order=c(0,0,1), period=12))
+incifc4 <- forecast(incifmodel4, h=(216-monthCha))
+incifc4.ts <- ts(as.numeric(incifc4$mean), start=c(2011,1), frequency=12)
+inciPANIC4.ts.1 <- ts.union(inciPANIC4.ts, incifc4.ts)
+```
+
+below is thus a wrong image
+
+```{r}
+#pdf(file="~/Dropbox/gitLab/studyDepressionBigData/inciPanicPrediction4.pdf")
+plot(inciPANIC4.ts.1, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC4.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(incifc4$lower[,2],rev(incifc4$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+lines(fitted(incimodel4),col="red",lwd=1, lty="dotted")
+#dev.off()
+```
+Comparison of observed value, inciPANIC4.ts versus prediction values, fc0inci4.
+This is for the following contents of the manuscript: 
+The monthly incidence of panic disorder was stable from January 2004 to December 2010 (0·0054 ± 0·00086%). 
+
+The trend of increasing incidence rates continued, reaching an annual rate of 0·61% in 2021. This represents an increase of 838·46% compared with the average annual incidence of 0·065% (± 0·0082%) recorded between 2004 and 2010. 
+
+...
+The observed monthly incidences were 35·48% (an observed monthly incidence of 0·0084% vs. the predicted 0·0062%, 95% CI:0·0053%–0·0072%), 33·33% (0·0084% vs. 0·0063%%, 95% CI:0·0052%–0·0075%), and 157·14% (0·018% vs. 0·0070%%, 95% CI:0·0055%–0·0084%) higher than the counterfactual predicted incidences for January 2011, February 2011, and March 2011, respectively. 
+
+# values case by case
+```{r}
+# incidence values during pre-disclosure period
+# below is the monthly values of pre-disclosure period
+mean(window(inciPANIC4.ts, start = c(2004, 1), end = c(2010, 12)))
+sd(window(inciPANIC4.ts, start = c(2004, 1), end = c(2010, 12)))
+
+#increase from December 2010 to January, February, March, April, 2011  
+# observed value on April 2011 
+valInci201104 <- window(inciPANIC4.ts, start = c(2011, 4), end = c(2011, 4))
+(0.0084-0.0065)*100/0.0065
+(0.018-0.0065)*100/0.0065
+
+# for prevalence
+valPrev201101 <- window(prevPANIC4.ts, start = c(2011, 1), end = c(2011, 1))
+
+
+# observed value in 2021 = annual incidence in 2021
+valInci2021 <- sum(window(inciPANIC4.ts, start = c(2021, 1), end = c(2021, 12)))
+(0.026-0.0065)*100/0.0065
+
+# observed value on January 2011 
+valInci201101 <- window(inciPANIC4.ts, start = c(2011, 1), end = c(2011, 1))
+# predicted value on January 2011
+valInci201101fc <- window(fc0inci4.ts, start = c(2011, 1), end = c(2011, 1))
+#% increase
+100*(0.0084-0.0062)/0.0062
+
+# observed value on February 2011 
+valInci201102 <- window(inciPANIC4.ts, start = c(2011, 2), end = c(2011, 2))
+# predicted value on February 2011
+valInci201102fc <- window(fc0inci4.ts, start = c(2011, 2), end = c(2011, 2))
+#% increase
+100*(0.0084-0.0063)/0.0063
+
+# observed value on March 2011 
+valInci201103 <- window(inciPANIC4.ts, start = c(2011, 3), end = c(2011, 3))
+# predicted value on March 2011
+valInci201103fc <- window(fc0inci4.ts, start = c(2011, 3), end = c(2011, 3))
+#% increase
+100*(0.018-0.0070)/0.0070
+
+# for comparison with OCD, values of OCD were examined. 
+inciOCD4.ts
+
+
+# belows seem not to be used in the manuscript: from the review at 20231219 
+mean(window(inciPANIC4.ts, end=c(2010,12)))
+sd(window(inciPANIC4.ts, end=c(2010,12)))
+
+# annual values 
+val201011 <- window(inciPANIC.ts, start = c(2010, 11), end = c(2010, 11))
+as.numeric(val201011)
+val201101 <- window(inciPANIC4.ts, start = c(2011, 1), end = c(2011, 1))
+as.numeric(val201101)
+val201102 <- window(inciPANIC.ts, start = c(2011, 2), end = c(2011, 2))
+as.numeric(val201102)
+
+# increase from Nov 2010 to Dec 2010 in percent
+val201012 <- window(inciPANIC.ts, start = c(2010, 12), end = c(2010, 12))
+as.numeric(val201012)/as.numeric(val201011)*100
+
+# increase from Dec 2010 to Jan 2011 in percent
+as.numeric(val201101)/as.numeric(val201012)*100
+
+# increase from Dec 2010 to Feb 2011 in percent
+as.numeric(val201102)/as.numeric(val201012)*100
+
+# increase from Dec 2010 to march 2011 in percent
+val201103 <- window(inciPANIC.ts, start = c(2011, 3), end = c(2011, 3))
+as.numeric(val201103)/as.numeric(val201012)*100
+
+as.numeric(val201101)/as.numeric(val201012)*100
+
+# increase from Dec 2010 to April 2011 in percent
+val201104 <- window(inciPANIC.ts, start = c(2011, 4), end = c(2011, 4))
+as.numeric(val201104)/as.numeric(val201012)*100
+
+# yearly incidence of 2021
+val2021 <- window(inciPANIC4.ts, start = c(2021, 1), end = c(2021, 12))
+sum(val2021)
+
+# yearly incidence of 2010
+val2010 <- window(inciPANIC.ts, start = c(2010, 1), end = c(2010, 12))
+sum(val2010)
+
+# yearly incidence of 2004
+val2004 <- window(inciPANIC.ts, start = c(2004, 1), end = c(2004, 12))
+sum(val2004)
+
+# increas from 2004 to 2021
+0.61/0.053*100
+
+
+# number of patients in 2010
+numInciPANIC.ts=ts(DTPANIC$inciN4,frequency=12, start=c(2004,1))
+numInciPANIC2010=window(numInciPANIC.ts, start = c(2010, 1), end = c(2010, 12))
+sum(numInciPANIC2010)
+
+# number of patients in 2021
+numInciPANIC2021=window(numInciPANIC.ts, start = c(2021, 1), end = c(2021, 12))
+sum(numInciPANIC2021)
+
+
+# forecasted 
+fval201101= window(incifc4.ts, start = c(2011, 1), end = c(2011, 1)) 
+fval201102= window(incifc4.ts, start = c(2011, 2), end = c(2011, 2)) 
+fval201103= window(incifc4.ts, start = c(2011, 3), end = c(2011, 3)) 
+fval201104= window(incifc4.ts, start = c(2011, 4), end = c(2011, 4)) 
+
+fval2021= sum(window(incifc4.ts, start = c(2021, 1), end = c(2021, 12)))
+val2021 =sum(val2021)
+(as.numeric(val201101)-as.numeric(fval201101))/as.numeric(fval201101)*100
+(as.numeric(val201102)-as.numeric(fval201102))/as.numeric(fval201102)*100
+(as.numeric(val201103)-as.numeric(fval201103))/as.numeric(fval201103)*100
+
+(as.numeric(val2021)-as.numeric(fval2021))/as.numeric(fval2021)*100
+
+# increase from Dec 2010 to Jan 2011 in OCD percent
+valOCD201012 <- window(inciOCD.ts, start = c(2010, 12), end = c(2010, 12))
+valOCD201101 <- window(inciOCD.ts, start = c(2011, 1), end = c(2011, 1))
+as.numeric(valOCD201012)
+as.numeric(valOCD201101)
+
+# number of OCD patients in 2010
+numInciOCD.ts=ts(DTOCD$inciN4,frequency=12, start=c(2004,1))
+numInciOCD2010=window(numInciOCD.ts, start = c(2010, 1), end = c(2010, 12))
+sum(numInciOCD2010)
+
+# number of OCD patients in 2011
+numInciOCD2011=window(numInciOCD.ts, start = c(2011, 1), end = c(2011, 12))
+sum(numInciOCD2011)
+
+# number of OCD patients in 2012
+numInciOCD2012=window(numInciOCD.ts, start = c(2012, 1), end = c(2012, 12))
+sum(numInciOCD2012)
+
+# number of OCD patients in 2013
+numInciOCD2013=window(numInciOCD.ts, start = c(2013, 1), end = c(2013, 12))
+sum(numInciOCD2013)
+
+# number of OCD patients in 2014
+numInciOCD2014=window(numInciOCD.ts, start = c(2014, 1), end = c(2014, 12))
+sum(numInciOCD2014)
+
+# number of OCD patients in 2015
+numInciOCD2015=window(numInciOCD.ts, start = c(2015, 1), end = c(2015, 12))
+sum(numInciOCD2015)
+
+
+# number of OCD patients in 2021
+numInciOCD2021=window(numInciOCD.ts, start = c(2021, 1), end = c(2021, 12))
+sum(numInciOCD2021)
+
+
+# yearly incidence of OCD in 2021
+valOCD.2021 <- window(inciOCD4.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valOCD.2021)
+
+# yearly incidence of 2010
+valOCD.2010 <- window(inciOCD.ts, start = c(2010, 1), end = c(2010, 12))
+sum(valOCD.2010)
+
+# yearly incidence of 20
+valOCD.2004 <- window(inciOCD.ts, start = c(2004, 1), end = c(2004, 12))
+sum(valOCD.2004)
+```
+
+
+# making annual incidence and prevalence table. 
+```{r}
+inciOCD <- list(inciOCD1.ts, inciOCD2.ts,inciOCD3.ts, inciOCD4.ts );
+prevOCD <- list(prevOCD1.ts, prevOCD2.ts, prevOCD3.ts, prevOCD4.ts );
+inciPANIC <- list(inciPANIC1.ts, inciPANIC2.ts,inciPANIC3.ts, inciPANIC4.ts );
+prevPANIC <- list(prevPANIC1.ts, prevPANIC2.ts,prevPANIC3.ts, prevPANIC4.ts );
+years = 2004:2021;
+
+inciOCDTable=matrix(nrow=18,ncol=4);
+
+for (d in 1:4)  {
+ for (year in 1:18) {
+  
+  yearWindow=window(inciOCD[[d]], start = c(years[year], 1), end = c(years[year], 12))
+  inciOCDTable[year,d] = sum(yearWindow);
+}
+}
+
+prevOCDTable=matrix(nrow=18,ncol=4);
+
+for (d in 1:4)  {
+ for (year in 1:18) {
+  
+  yearWindow=window(prevOCD[[d]], start = c(years[year], 1), end = c(years[year], 12))
+  prevOCDTable[year,d] = sum(yearWindow);
+}
+}
+
+inciPANICTable=matrix(nrow=18,ncol=4);
+
+for (d in 1:4)  {
+ for (year in 1:18) {
+  
+  yearWindow=window(inciPANIC[[d]], start = c(years[year], 1), end = c(years[year], 12))
+  inciPANICTable[year,d] = sum(yearWindow);
+}
+}
+
+prevPANICTable=matrix(nrow=18,ncol=4);
+
+for (d in 1:4)  {
+ for (year in 1:18) {
+  
+  yearWindow=window(prevPANIC[[d]], start = c(years[year], 1), end = c(years[year], 12))
+  prevPANICTable[year,d] = sum(yearWindow);
+}
+}
+
+inciOCDTable=data.frame(inciOCDTable)
+colnames(inciOCDTable) = c('Primary Dx only', '~ Secondary Dx','~ Tertiary Dx', '~ Quaternary Dx');
+row.names(inciOCDTable) = 2004:2021
+
+prevOCDTable=data.frame(prevOCDTable)
+colnames(prevOCDTable) = c('Primary Dx only', '~ Secondary Dx','~ Tertiary Dx', '~ Quaternary Dx');
+row.names(prevOCDTable) = 2004:2021
+
+inciPANICTable=data.frame(inciPANICTable)
+colnames(inciPANICTable) = c('Primary Dx only', '~ Secondary Dx','~ Tertiary Dx', '~ Quaternary Dx');
+row.names(inciPANICTable) = 2004:2021
+
+prevPANICTable=data.frame(prevPANICTable)
+colnames(prevPANICTable) = c('Primary Dx only', '~ Secondary Dx','~ Tertiary Dx', '~ Quaternary Dx');
+row.names(prevPANICTable) = 2004:2021
+
+install.packages("flextable")
+library(flextable)
+library(dplyr)
+library(tibble)
+inciPANICft = flextable(inciPANICTable %>% rownames_to_column("Year")) 
+inciPANICft <- colformat_double(
+  x = inciPANICft,
+  big.mark = ",", digits = 3, na_str = "N/A"
+)
+inciPANICft = autofit(inciPANICft)
+inciPANICft <- theme_vanilla(inciPANICft)
+inciPANICft <- set_caption(inciPANICft, caption = "Annual Incidence of Panic Disorder (%)")
+
+prevPANICft = flextable(prevPANICTable %>% rownames_to_column("Year")) 
+prevPANICft <- colformat_double(
+  x = prevPANICft,
+  big.mark = ",", digits = 3, na_str = "N/A"
+)
+prevPANICft = autofit(prevPANICft)
+prevPANICft <- theme_vanilla(prevPANICft)
+prevPANICft <- set_caption(prevPANICft, caption = "Annual Prevalence of Panic Disorder (%)")
+
+inciOCDft = flextable(inciOCDTable %>% rownames_to_column("Year")) 
+inciOCDft <- colformat_double(
+  x = inciOCDft,
+  big.mark = ",", digits = 3, na_str = "N/A"
+)
+inciOCDft = autofit(inciOCDft)
+inciOCDft <- theme_vanilla(inciOCDft)
+inciOCDft <- set_caption(inciOCDft, caption = "Annual Prevalence of OCD (%)")
+
+prevOCDft = flextable(prevOCDTable %>% rownames_to_column("Year")) 
+prevOCDft <- colformat_double(
+  x = prevOCDft,
+  big.mark = ",", digits = 3, na_str = "N/A"
+)
+prevOCDft = autofit(prevOCDft)
+prevOCDft <- theme_vanilla(prevOCDft)
+prevOCDft <- set_caption(prevOCDft, caption = "Annual Prevalence of OCD (%)")
+
+library(officer)
+save_as_docx(inciPANICft, prevPANICft, inciOCDft, prevOCDft,  path = "PanicTableSuppl1V2.docx")
+
+```
+
+
+
+# calculating mean and sd of annual incidence and prevalence before 2011 
+```{r}
+# 2004 2005 2006 2007 2008 2009 2010 - total 7 years
+mean(inciPANICTable$`~ Quaternary Dx`[1:7])
+sd(inciPANICTable$`~ Quaternary Dx`[1:7])
+
+100*(0.61-0.065)/0.065 
+
+mean(prevPANICTable$`~ Quaternary Dx`[1:7])
+sd(prevPANICTable$`~ Quaternary Dx`[1:7])
+
+# calculating annual prevalence change from 2010 to 2011, 2012,2013
+(1.20-0.74)*100/0.74
+(1.85-0.74)*100/0.74
+
+```
+
+# making table showing
+# the impact of the disclosure on prevalence according to the forecasting
+```{r}
+# make a function to calculate monthly observed incidence and predicted incidence, the difference and its percentage with confidence interval. 
+
+pedictMonthlyDiff = function(firstTs, forecasted, yearMonth) {
+  observed = window(firstTs, start = yearMonth, end = yearMonth)
+  forecasted.ts <- ts(as.numeric(forecasted$mean), start=c(2011,1), frequency=12)
+  forecasted97Low.ts <- ts(as.numeric(forecasted$lower[,2]), start=c(2011,1), frequency=12)
+  forecasted97High.ts <- ts(as.numeric(forecasted$upper[,2]), start=c(2011,1), frequency=12)
+  
+  predicted = window(forecasted.ts, start = yearMonth, end = yearMonth)
+  percent = 100* (observed - predicted) / predicted
+  
+  low95 <- window(forecasted97Low.ts, start = yearMonth, end = yearMonth)
+  high95 <- window(forecasted97High.ts, start = yearMonth, end = yearMonth)
+  
+  my_list <- list("observed" = observed, "predicted" = predicted, "percent"= percent, "low95" = low95, "high95" = high95)
+  return(my_list) 
+  
+}
+
+# yearly prevalence of 2021
+valPrev2021 <- window(prevPANIC4.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrev2021)
+
+# yearly prevalence of 2010
+valPrev2010 <- window(prevPANIC.ts, start = c(2010, 1), end = c(2010, 12))
+sum(valPrev2010)
+
+# yearly prevalence of 2006
+valPrev2006 <- window(prevPANIC.ts, start = c(2006, 1), end = c(2006, 12))
+sum(valPrev2006)
+
+# yearly prevalence of 2007
+valPrev2007 <- window(prevPANIC.ts, start = c(2007, 1), end = c(2007, 12))
+sum(valPrev2007)
+
+
+# yearly prevalence of 2007
+valPrev2011 <- window(prevPANIC.ts, start = c(2011, 1), end = c(2011, 12))
+sum(valPrev2011)
+
+
+
+0.74/0.36*100
+
+# yearly prevalence of 2004
+valPrev2004 <- window(prevPANIC.ts, start = c(2004, 1), end = c(2004, 12))
+sum(valPrev2004)
+
+7.53/0.36*100
+
+# yearly forecasted incidence of 2021
+valPrevForecasted2021 <- window(fcPrev1.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrevForecasted2021)
+
+
+
+# 95% CI
+fc1Prev97Low.ts <- ts(as.numeric(fcPrev1$lower[,2]), start=c(2011,1), frequency=12)
+fc1Prev97High.ts <- ts(as.numeric(fcPrev1$upper[,2]), start=c(2011,1), frequency=12)
+sum(valPrev2021low)
+sum(valPrev2021high)
+
+```
+
+# change point analysis 
+```{r}
+install.packages("changepoint")
+library('changepoint')
+ansmeanOCD=cpt.mean(inciOCD.ts);
+plot(ansmeanOCD)
+ansmeanPANIC=cpt.mean(inciPANIC.ts);
+plot(ansmeanPANIC)
+
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/inciPanic4CPA.pdf")
+ansmeanvarPANIC=cpt.meanvar(inciPANIC.ts);
+plot(ansmeanvarPANIC)
+dev.off()
+
+ansmeanvarOCD=cpt.meanvar(inciOCD.ts);
+plot(ansmeanvarOCD)
+
+```
+
+```{r}
+# model 1 is for statistical analysis result is (1 0 0) , (0,0,1) 
+modelOCD <- auto.arima(inciOCD.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(modelOCD)
+Box.test(modelOCD$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(modelOCD)
+confint(modelOCD)
+coeftest(modelOCD)
+```
+
+# the impact of the disclosure according to the forecasting
+```{r}
+# yearly incidence of 2021
+val2021 <- window(inciPANIC4.ts, start = c(2021, 1), end = c(2021, 12))
+sum(val2021)
+
+# yearly forecasted incidence of 2021
+valForecasted2021 <- window(fc1.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valForecasted2021)
+# 95% CI
+0.00363*12
+0.00714*12
+```
+
+# now, prevalence data
+```{r}
+# model 1 is for statistical analysis for prevalence result is (0 1 1) , (0,0,1)[12] 
+modelPrev1 <- auto.arima(prevPANIC4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(modelPrev1)
+Box.test(modelPrev1$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(modelPrev1)
+confint(modelPrev1)
+coeftest(modelPrev1)
+
+
+modelPrev1OCD = auto.arima(prevOCD4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+summary(modelPrev1OCD)
+coeftest(modelPrev1OCD)
+
+```
+
+
+
+
+```{r}
+# model 1 is for prediction with whole time series
+fmodelPrev1 <- Arima(window(prevPANIC.ts, end=c(2010,12)), order=c(0,1,1), seasonal=list(order=c(0,0,1), period=12))
+fcPrev1 <- forecast(fmodelPrev1, h=(216-monthCha))
+fcPrev1.ts <- ts(as.numeric(fcPrev1$mean), start=c(2011,1), frequency=12)
+prevPANIC.ts.1 <- ts.union(prevPANIC.ts, fcPrev1.ts)
+```
+
+```{r}
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/prevPanicPrediction20042021.pdf")
+plot(prevPANIC.ts.1, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevPANIC.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(fcPrev1$lower[,2],rev(fcPrev1$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+lines(fitted(modelPrev1),col="red",lwd=1, lty="dotted")
+dev.off()
+```
+
+```{r}
+# 95 CI  of prevalence data
+fc1Prev97Low.ts <- ts(as.numeric(fcPrev1$lower[,2]), start=c(2011,1), frequency=12)
+fc1Prev97High.ts <- ts(as.numeric(fcPrev1$upper[,2]), start=c(2011,1), frequency=12)
+valPrev2021low <- window(fc1Prev97Low.ts, start = c(2021, 1), end = c(2021, 12))
+valPrev2021high <- window(fc1Prev97High.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrev2021low)
+sum(valPrev2021high)
+
+```
+
+
+# OCD prevalence graph for comparison
+```{r}
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/prevPANICOCD20042021.pdf")
+prevPANICOCD.ts <- ts.union(prevPANIC.ts, prevOCD.ts)
+plot(prevPANICOCD.ts, type="l", plot.type="s", col=c('blue','red'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","solid"), ylim=c(0,max(prevPANIC.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+dev.off()
+```
+7.53
+
+# the impact of the disclosure on prevalence according to the forecasting
+```{r}
+# yearly prevalence of 2021
+valPrev2021 <- window(prevPANIC4.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrev2021)
+
+# yearly prevalence of 2010
+valPrev2010 <- window(prevPANIC.ts, start = c(2010, 1), end = c(2010, 12))
+sum(valPrev2010)
+
+# yearly prevalence of 2006
+valPrev2006 <- window(prevPANIC.ts, start = c(2006, 1), end = c(2006, 12))
+sum(valPrev2006)
+
+# yearly prevalence of 2007
+valPrev2007 <- window(prevPANIC.ts, start = c(2007, 1), end = c(2007, 12))
+sum(valPrev2007)
+
+
+# yearly prevalence of 2007
+valPrev2011 <- window(prevPANIC.ts, start = c(2011, 1), end = c(2011, 12))
+sum(valPrev2011)
+
+
+
+0.74/0.36*100
+
+# yearly prevalence of 2004
+valPrev2004 <- window(prevPANIC.ts, start = c(2004, 1), end = c(2004, 12))
+sum(valPrev2004)/mean(head(mTotPopulation,12))*100
+
+7.53/0.36*100
+
+# yearly forecasted incidence of 2021
+valPrevForecasted2021 <- window(fcPrev1.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrevForecasted2021)
+sum(valPrevForecasted2021)/mean(tail(mTotPopulation,12))*100
+
+# 95% CI
+fc1Prev97Low.ts <- ts(as.numeric(fcPrev1$lower[,2]), start=c(2011,1), frequency=12)
+fc1Prev97High.ts <- ts(as.numeric(fcPrev1$upper[,2]), start=c(2011,1), frequency=12)
+sum(valPrev2021low)
+sum(valPrev2021high)
+
+```
+# chnage point analysis for prevalence
+```{r}
+#install.packages("changepoint")
+library('changepoint')
+
+ansmeanvarPrevPANIC=cpt.meanvar(prevPANIC.ts);
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/prevPanic4CPA.pdf")
+plot(ansmeanvarPrevPANIC)
+dev.off()
+ansmeanvarPrevPANIC
+
+ansmeanvarPrevOCD=cpt.meanvar(prevOCD.ts);
+plot(ansmeanvarPrevOCD)
+
+```
+
+# now, prevalence data of OCD
+```{r}
+# model 1 is for statistical analysis for prevalence result is (0 1 1) , (0,0,1)[12] 
+modelPrevOCD1 <- auto.arima(prevOCD.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+# Check residuals
+checkresiduals(modelPrevOCD1)
+Box.test(modelPrevOCD1$residuals, lag = 24, type = "Ljung-Box")
+# Estimate parameters and confidence intervals
+summary(modelPrevOCD1)
+confint(modelPrevOCD1)
+coeftest(modelPrevOCD1)
+```
+```{r}
+# yearly incidence of OCD in 2021
+valPrevOCD2021 <- window(prevOCD.ts, start = c(2021, 1), end = c(2021, 12))
+sum(valPrevOCD2021)
+
+# yearly incidence of 2004
+valPrevOCD2004 <- window(prevOCD.ts, start = c(2004, 1), end = c(2004, 12))
+sum(valPrevOCD2004)
+
+1/0.36*100
+
+
+```
+
+# correlation between Google trend and incidence
+```{r}
+library(tseries)
+adf.test(google.ts, alternative = "stationary") 
+adf.test(inciPANIC.ts, alternative = "stationary") 
+adf.test(prevPANIC.ts, alternative = "stationary") 
+
+adf.test(diff(inciPANIC.ts), alternative = "stationary") 
+adf.test(diff(prevPANIC.ts), alternative = "stationary")
+
+
+cor.test(inciPANIC.ts, google.ts,  method="kendall")
+cor.test(diff(inciPANIC.ts), google.ts[-216],  method="spearman", exact=FALSE)
+cor.test(diff(prevPANIC.ts), google.ts[-216],  method="spearman", exact=FALSE)
+
+grangertest(diff(prevPANIC.ts) ~ google.ts[-216], order=4)
+grangertest(google.ts[-216] ~ diff(prevPANIC.ts), order=4)
+
+
+grangertest(diff(prevPANIC.ts) ~ google.ts[-216], order=3)
+grangertest(google.ts[-216] ~ diff(prevPANIC.ts), order=3)
+
+grangertest(diff(prevPANIC.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(prevPANIC.ts), order=2)
+
+grangertest(diff(prevPANIC.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(prevPANIC.ts), order=1)
+
+grangertest(diff(inciPANIC.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(inciPANIC.ts), order=1)
+
+grangertest(diff(inciPANIC.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(inciPANIC.ts), order=2)
+
+grangertest(diff(prevOCD.ts) ~ google.ts[-length(google.ts)], order=2)
+grangertest(diff(prevOCD.ts) ~ google.ts[-length(google.ts)], order=3)
+grangertest(diff(prevOCD.ts) ~ google.ts[-length(google.ts)], order=1)
+grangertest(diff(inciOCD.ts) ~ google.ts[-length(google.ts)], order=2)
+grangertest(diff(inciOCD.ts) ~ google.ts[-length(google.ts)], order=3)
+grangertest(diff(inciOCD.ts) ~ google.ts[-length(google.ts)], order=1)
+
+```
+
+
+```{r}
+pdf(file="~/Dropbox/gitLab/studyDepressionBigData/prevPanicDifference.pdf")
+prevPANICdiff.ts = diff(prevPANIC.ts)
+prevPANICdiff.ts.1 <- ts.union(prevPANIC.ts[-216], prevPANICdiff.ts)
+plot(prevPANICdiff.ts.1, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(prevPANIC.ts)))
+ # add confidence interval
+ tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+ # below is drawing polygon supplying outline x,y coordinates
+ polygon(c(min(index(google.ts[-216])),index(google.ts[-216]), max(index(google.ts[-216]))), c(0, google.ts[-216]*max(inciPANIC.ts[-216])/10,0),col="blue")
+ abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+ lines(fitted(modelPrev1),col="red",lwd=1, lty="dotted")
+ dev.off()
+```
+
+For the following contents of the manuscript:
+Following the first celebrity disclosure in December 2010, there was an increases in Google search volume (4·12 ± 8·06 during the period from 2004 to 2010 versus 10·46 ± 9·24, from 2011 to 2021, t = -5·32, p < 0·001) and in the magnitude of the first-order difference in monthly prevalence (0·0012% ± 0·00099% versus 0·0089% ± 0·0082%, t = -10·67, p < 0·001) (Figure 4). 
+
+# Divide pre- and post-intervention period 
+
+```{r}
+
+pre.prevPANIC.ts <- window(prevPANIC4.ts, start = c(2004, 1), end = c(2010, 12))
+post.prevPANIC.ts <- window(prevPANIC4.ts, start = c(2011, 1), end = c(2021, 12))
+prevDiff = t.test(abs(diff(pre.prevPANIC.ts)),abs(diff(post.prevPANIC.ts)))
+mean(abs(diff(pre.prevPANIC.ts)))
+mean(abs(diff(post.prevPANIC.ts)))
+sd(abs(diff(pre.prevPANIC.ts)))
+sd(abs(diff(post.prevPANIC.ts)))
+
+pre.google.ts <- window(google.ts, start = c(2004, 1), end = c(2010, 12))
+post.google.ts <- window(google.ts, start = c(2011, 1), end = c(2021, 12))
+googleDiff = t.test(pre.google.ts,post.google.ts)
+mean(pre.google.ts)
+mean(post.google.ts)
+
+sd(pre.google.ts)
+sd(post.google.ts)
+
+
+grangertest(diff(pre.prevPANIC.ts) ~ pre.google.ts[-length(pre.google.ts)], order=3)
+grangertest(diff(post.prevPANIC.ts) ~ post.google.ts[-length(post.google.ts)], order=3)
+
+grangertest(diff(pre.prevPANIC.ts) ~ pre.google.ts[-length(pre.google.ts)], order=2)
+grangertest(diff(post.prevPANIC.ts) ~ post.google.ts[-length(post.google.ts)], order=2)
+
+grangertest(diff(pre.prevPANIC.ts) ~ pre.google.ts[-length(pre.google.ts)], order=1)
+grangertest(diff(post.prevPANIC.ts) ~ post.google.ts[-length(post.google.ts)], order=1)
+
+
+cor.test(diff(pre.prevPANIC.ts), pre.google.ts[-length(pre.google.ts)],  method="spearman", exact=FALSE)
+cor.test(diff(post.prevPANIC.ts), post.google.ts[-length(post.google.ts)],  method="spearman", exact=FALSE)
+
+
+```
+
+
+```{r}
+require(bayesforecast)
+require(coda)
+m1 <- auto.sarima(inciPANIC.ts, seasonal=TRUE, xreg=transferF, max.d=2, max.D=2, stepwise=FALSE, trace=TRUE)
+
+```
