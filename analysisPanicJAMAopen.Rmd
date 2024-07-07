@@ -1,0 +1,182 @@
+---
+title: "R Notebook for Manuscript of Panic Disorder Prevalence"
+output: html_notebook
+---
+
+```{r}
+library('lmtest');
+library('tseries');
+library('changepoint');
+library('forecast');
+library('cardidates');
+```
+
+# Read data
+```{r}
+require(readxl)
+setwd("~/Dropbox/gitLab/studyDepressionBigData/panicPrevalence/")
+DTPANIC<- read_xlsx("PanicWholePopu.xlsx",sheet = "PANIC")
+mTotPopulation=DTPANIC$totN1;
+nPrevPANIC4=DTPANIC$prevN4/mTotPopulation*100;
+nNPrevPANIC4=DTPANIC$inciN4/mTotPopulation*100;
+DTOCD<- read_xlsx("PanicWholePopu.xlsx",sheet = "OCD")
+nPrevOCD4=DTOCD$prevN4/mTotPopulation*100;
+nNPrevOCD4=DTOCD$inciN4/mTotPopulation*100;
+```
+
+# Read Google Trends
+```{r}
+sPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/panicDisorder20142021.csv", header=FALSE);
+sOCDDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/OCDDisorder20142029.csv", header=FALSE);
+sPanicOCDDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/PanicOCDDisorder20142029.csv", header=FALSE);
+sChaPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googChaPanicDis.csv", header=FALSE);
+sLeePanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googLeePanicDis.csv", header=FALSE);
+sKimPanicDis=read.csv(file="~/Dropbox/gitLab/studyDepressionBigData/googKimPanicDis.csv", header=FALSE);
+```
+
+# Make dataframe
+```{r}
+data <- data.frame(
+month = as.ts(sPanicDis$V1, format="%Y-%m"),
+prevPANIC4 = nPrevPANIC4, 
+prevOCD4 = nPrevOCD4,
+inciPANIC4 = nNPrevPANIC4, 
+inciOCD4 = nNPrevOCD4, 
+
+google = sPanicDis$V2,
+googleOCD = sOCDDis$V2,
+googleOCDrelative = sPanicOCDDis$V3,
+googCha = c(sChaPanicDis$V2,rep(0,96)),
+googLee = c(sLeePanicDis$V2,rep(0,96)),
+googKim = c(sKimPanicDis$V2,rep(0,96))
+)
+
+google.ts=ts(data$google,frequency=12, start=c(2004,1))
+googleOCD.ts=ts(data$googleOCD,frequency=12, start=c(2004,1))
+googleOCDrelative.ts=ts(data$googleOCDrelative,frequency=12, start=c(2004,1))
+prevPANIC4.ts=ts(data$prevPANIC4,frequency=12, start=c(2004,1))
+prevOCD4.ts=ts(data$prevOCD4, frequency = 12, start = c(2004,1))
+inciPANIC4.ts=ts(data$inciPANIC4,frequency=12, start=c(2004,1) )
+inciOCD4.ts=ts(data$inciOCD4,frequency=12, start=c(2004,1) )
+```
+
+# Draw graph of incidence and google data
+```{r}
+inciNEURO2.ts=ts.union(inciPANIC.ts, inciOCD.ts);
+plot(inciNEURO2.ts, type="l", plot.type="s", col=c("blue","cyan"), xlab="Month", ylab="Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC.ts)))
+legend("topleft", inset = 0.02, legend=c("PANIC","OCD"),
+       col=c("blue", "cyan"), lty=1, cex=0.8)
+polygon(c(min(index(google.ts)),index(google.ts), max(index(google.ts))), c(0, google.ts*max(inciPANIC.ts)/100,0),col="blue")
+polygon(c(min(index(googleOCDrelative.ts)),index(googleOCDrelative.ts), max(index(googleOCDrelative.ts))), c(0, googleOCDrelative.ts*max(inciPANIC.ts)/100,0),col="green")
+# Add vertical lines indicating date of celerbity disclosures
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+```
+# Make transfer fuction matrix
+```{r}
+countN=1:216;
+monthCha=which(data$googCha == 100);
+monthKim=which(data$googKim == 100);
+monthLee=which(data$googLee == 100);
+
+stepCha = as.numeric(countN > monthCha)
+stepKim = as.numeric(countN > monthKim)
+stepLee = as.numeric(countN > monthLee)
+rampCha <- append(rep(0,monthCha), seq(1,216-monthCha,1))
+rampKim <- append(rep(0,monthKim), seq(1,216-monthKim,1))
+rampLee <- append(rep(0,monthLee), seq(1,216-monthLee,1))
+transferF=cbind(stepCha,stepKim,stepLee,rampCha,rampKim,rampLee)
+transferF.ts=ts(transferF,frequency=12, start=c(2004,1))
+transferFGoogle=as.numeric(google.ts)
+transferFGoogle.ts=ts(transferF,frequency=12, start=c(2004,1))
+
+plot(transferF.ts)
+```
+# Check autocorrelation
+```{r}
+acf2(inciPANIC4.ts, max.lag=24)
+acf2(diff(inciPANIC4.ts,lag=12), max.lag=24)
+acf2(diff(diff(inciPANIC4.ts,lag=12)), max.lag=24)
+```
+
+Below is the selected model of incidence. In the text:Only the first celebrity disclosure significantly increased both the level (0·0058%, 95% CI: 0·0022%–0·0095%, p < 0·005) and slope of the monthly incidence of panic disorder (0·00078% per month, 95% CI 0·00019%–0·0014% per month, p < 0·01). 
+# Modeling
+```{r}
+incimodel4 <- auto.arima(inciPANIC4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+
+checkresiduals(incimodel4)
+Box.test(incimodel4$residuals, lag = 24, type = "Ljung-Box")
+
+summary(incimodel4)
+confint(incimodel4)
+coeftest(incimodel4)
+```
+
+# OCD model
+```{r}
+modelOCD4 <- auto.arima(inciOCD4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+
+checkresiduals(modelOCD4)
+Box.test(modelOCD4$residuals, lag = 24, type = "Ljung-Box")
+
+summary(modelOCD4)
+confint(modelOCD4)
+coeftest(modelOCD4)
+```
+
+
+Significance was found in two cases:grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2) and grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=3).
+A significant p-value in the context of the ADF test suggests that the time series is likely stationary.
+A significant p-value was found in google.ts and diff(prevPANIC4.ts) diff(inciPANIC4.ts).
+In the manuscript: The monthly incidence and prevalence were nonstationary (ADF = -2·98, p = 0·17 and ADF = -0·73, p = 0·97 for incidence and prevalence, respectively); the first-order differences in the monthly incidence and prevalence of panic disorder were stationary (ADF = -8·19, p < 0·05 and ADF = -7·14, p < 0·05 for incidence and prevalence, respectively). 
+
+
+# Google Trend and Incidence
+```{r}
+adf.test(google.ts, alternative = "stationary") 
+adf.test(inciPANIC4.ts, alternative = "stationary") 
+adf.test(prevPANIC4.ts, alternative = "stationary") 
+adf.test(diff(inciPANIC4.ts), alternative = "stationary") 
+adf.test(diff(prevPANIC4.ts), alternative = "stationary")
+
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=4)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=4)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=3)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=3)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=2)
+grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(prevPANIC4.ts), order=1)
+grangertest(diff(inciPANIC4.ts) ~ google.ts[-216], order=1)
+grangertest(google.ts[-216] ~ diff(inciPANIC4.ts), order=1)
+grangertest(diff(inciPANIC4.ts) ~ google.ts[-216], order=2)
+grangertest(google.ts[-216] ~ diff(inciPANIC4.ts), order=2)
+
+```
+
+model0inci4 represents best fit model with its parameter using only pre-disclosure period. Best model: ARIMA(1,1,0)(1,0,0)[12]   
+fmodel0inci4 means modeled time series using model0
+fc0inci4 and fc0inci4.ts is the forecasted series using the fmodel0inci4
+inciPANIC4.ts.2 .2 indicates combined time series with forecast
+
+# Prediction model
+```{r}
+# model 0 is for prediction 
+model0inci4 <- auto.arima(window(inciPANIC4.ts, end=c(2010,12)), seasonal=TRUE, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
+fmodel0inci4 <- Arima(window(inciPANIC4.ts, end=c(2010,12)), order=c(1,1,0), seasonal=list(order=c(1,0,0), period=12))
+fc0inci4 <- forecast(fmodel0inci4, h=(216-monthCha))
+fc0inci4.ts <- ts(as.numeric(fc0inci4$mean), start=c(2011,1), frequency=12)
+inciPANIC4.ts.2 <- ts.union(inciPANIC4.ts, fc0inci4.ts)
+```
+
+```{r}
+plot(inciPANIC4.ts.2, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC4.ts)))
+# add confidence interval
+tmp <- seq(from = 2011, to =2021.99, by = 1/12)
+# below is drawing polygon supplying outline x,y coordinates
+polygon(c(tmp,rev(tmp)),c(fc0inci4$lower[,2],rev(fc0inci4$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
+abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
+
+```
+
