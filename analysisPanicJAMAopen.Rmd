@@ -71,6 +71,7 @@ polygon(c(min(index(googleOCDrelative.ts)),index(googleOCDrelative.ts), max(inde
 # Add vertical lines indicating date of celerbity disclosures
 abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
 ```
+
 # Make transfer fuction matrix
 ```{r}
 countN=1:216;
@@ -91,6 +92,7 @@ transferFGoogle.ts=ts(transferF,frequency=12, start=c(2004,1))
 
 plot(transferF.ts)
 ```
+
 # Check autocorrelation
 ```{r}
 acf2(inciPANIC4.ts, max.lag=24)
@@ -98,7 +100,6 @@ acf2(diff(inciPANIC4.ts,lag=12), max.lag=24)
 acf2(diff(diff(inciPANIC4.ts,lag=12)), max.lag=24)
 ```
 
-Below is the selected model of incidence. In the text:Only the first celebrity disclosure significantly increased both the level (0·0058%, 95% CI: 0·0022%–0·0095%, p < 0·005) and slope of the monthly incidence of panic disorder (0·00078% per month, 95% CI 0·00019%–0·0014% per month, p < 0·01). 
 # Modeling
 ```{r}
 incimodel4 <- auto.arima(inciPANIC4.ts, seasonal=TRUE, xreg=transferF, max.d=3, max.D=3, stepwise=FALSE, trace=TRUE);
@@ -122,13 +123,6 @@ summary(modelOCD4)
 confint(modelOCD4)
 coeftest(modelOCD4)
 ```
-
-
-Significance was found in two cases:grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=2) and grangertest(diff(prevPANIC4.ts) ~ google.ts[-216], order=3).
-A significant p-value in the context of the ADF test suggests that the time series is likely stationary.
-A significant p-value was found in google.ts and diff(prevPANIC4.ts) diff(inciPANIC4.ts).
-In the manuscript: The monthly incidence and prevalence were nonstationary (ADF = -2·98, p = 0·17 and ADF = -0·73, p = 0·97 for incidence and prevalence, respectively); the first-order differences in the monthly incidence and prevalence of panic disorder were stationary (ADF = -8·19, p < 0·05 and ADF = -7·14, p < 0·05 for incidence and prevalence, respectively). 
-
 
 # Google Trend and Incidence
 ```{r}
@@ -154,11 +148,6 @@ grangertest(diff(inciPANIC4.ts) ~ google.ts[-216], order=2)
 grangertest(google.ts[-216] ~ diff(inciPANIC4.ts), order=2)
 
 ```
-
-model0inci4 represents best fit model with its parameter using only pre-disclosure period. Best model: ARIMA(1,1,0)(1,0,0)[12]   
-fmodel0inci4 means modeled time series using model0
-fc0inci4 and fc0inci4.ts is the forecasted series using the fmodel0inci4
-inciPANIC4.ts.2 .2 indicates combined time series with forecast
 
 # Prediction model
 ```{r}
