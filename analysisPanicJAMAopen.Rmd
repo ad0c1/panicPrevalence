@@ -161,9 +161,7 @@ inciPANIC4.ts.2 <- ts.union(inciPANIC4.ts, fc0inci4.ts)
 
 ```{r}
 plot(inciPANIC4.ts.2, type="l", plot.type="s", col=c('blue','deepskyblue'), xlab="Month", ylab="New Panic Pat. N", linetype=c("solid","dashed"), ylim=c(0,max(inciPANIC4.ts)))
-# add confidence interval
 tmp <- seq(from = 2011, to =2021.99, by = 1/12)
-# below is drawing polygon supplying outline x,y coordinates
 polygon(c(tmp,rev(tmp)),c(fc0inci4$lower[,2],rev(fc0inci4$upper[,2])), col=rgb(0, 0.75, 1,0.1), border = FALSE)
 abline(v=c(2004+(which(data$googCha == 100)-1)/120*10,2004+(which(data$googKim == 100)-1)/120*10,2004+(which(data$googLee == 100)-1)/120*10), col="gray", lty="dashed", lwd=2)
 
